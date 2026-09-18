@@ -16,6 +16,9 @@ local isfile = isfile or function(file)
 	end)
 	return suc and res ~= nil and res ~= ''
 end
+local delfile = delfile or function(file)
+	pcall(function() writefile(file, '') end)
+end
 local cloneref = cloneref or function(obj)
 	return obj
 end
@@ -104,19 +107,23 @@ if not shared.VapeIndependent then
 			end
 		end
 	else
-		if isfile('newvape/games/jailbreak/606849621 - main/base.lua') then
-			loadstring(readfile('newvape/games/jailbreak/606849621 - main/base.lua'), 'jailbreak')(...)
-		elseif isfile('newvape/games/'..game.PlaceId..'.lua') then
-			loadstring(readfile('newvape/games/'..game.PlaceId..'.lua'), tostring(game.PlaceId))(...)
+		pcall(function()
+			delfile('newvape/games/jailbreak/606849621 - main/base.lua')
+		end)
+		local place = (game.PlaceId == 17190407811 and '17190407811' or '606849621')
+		local cacheFile = 'newvape/games/'..place..'.lua'
+		if isfile(cacheFile) then
+			local suc, content = pcall(readfile, cacheFile)
+			if (not suc) or (not content:find('entitylibrary')) then
+				delfile(cacheFile)
+			end
+		end
+		if isfile(cacheFile) and readfile(cacheFile) ~= '' then
+			loadstring(readfile(cacheFile), place)(...)
 		else
-			local success, data = pcall(downloadFile, 'newvape/games/jailbreak/606849621 - main/base.lua')
+			local success, data = pcall(downloadFile, cacheFile)
 			if success then
-				loadstring(data, 'jailbreak')(...)
-			else
-				local success2, data2 = pcall(downloadFile, 'newvape/games/'..game.PlaceId..'.lua')
-				if success2 then
-					loadstring(data2, tostring(game.PlaceId))(...)
-				end
+				loadstring(data, place)(...)
 			end
 		end
 	end

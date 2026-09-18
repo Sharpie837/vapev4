@@ -30,6 +30,8 @@ local function wipeFolder(path)
 		if file:find('loader') then continue end
 		if isfile(file) and select(1, readfile(file):find('--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.')) == 1 then
 			delfile(file)
+		elseif isfolder(file) then
+			wipeFolder(file)
 		end
 	end
 end
@@ -55,6 +57,9 @@ if not shared.VapeDeveloper then
 		wipeFolder('newvape/games')
 		wipeFolder('newvape/guis')
 		wipeFolder('newvape/libraries')
+		pcall(function()
+			delfile('newvape/games/jailbreak/606849621 - main/base.lua')
+		end)
 	end
 
 	if (isfile('newvape/profiles/asset.txt') and readfile('newvape/profiles/asset.txt') or '') ~= assetVer then
