@@ -44,11 +44,33 @@ local gameCamera = workspace.CurrentCamera
 local lplr = playersService.LocalPlayer
 
 local vape = shared.vape
-local entitylib = vape.Libraries.entity
-local whitelist = vape.Libraries.whitelist
-local prediction = vape.Libraries.prediction
-local targetinfo = vape.Libraries.targetinfo
-local sessioninfo = vape.Libraries.sessioninfo
+local hash = vape.Libraries.hash or loadstring(downloadFile('newvape/libraries/hash.lua'), 'hash')()
+local prediction = vape.Libraries.prediction or loadstring(downloadFile('newvape/libraries/prediction.lua'), 'prediction')()
+local entitylib = vape.Libraries.entity or loadstring(downloadFile('newvape/libraries/entity.lua'), 'entitylibrary')()
+local whitelist = vape.Libraries.whitelist or {
+	alreadychecked = {},
+	customtags = {},
+	tagcallback = {},
+	data = {WhitelistedUsers = {}},
+	hashes = setmetatable({}, {
+		__index = function(_, data)
+			return hash and hash.sha512(data..'SelfReport') or ''
+		end
+	}),
+	get = function() return 0, true end,
+	hooked = false,
+	loaded = false,
+	localprio = 0,
+	said = {}
+}
+vape.Libraries.entity = entitylib
+vape.Libraries.whitelist = whitelist
+vape.Libraries.prediction = prediction
+vape.Libraries.hash = hash
+local targetinfo = vape.Libraries.targetinfo or {Targets = {}}
+vape.Libraries.targetinfo = targetinfo
+local sessioninfo = vape.Libraries.sessioninfo or {AddItem = function() end, Objects = {}}
+vape.Libraries.sessioninfo = sessioninfo
 local vm = loadstring(downloadFile('newvape/libraries/vm.lua'), 'vm')()
 
 local jb = {}
@@ -865,20 +887,1047 @@ if vape.Categories and vape.Categories.Main and vape.Categories.Main.Object and 
 	if box then box.Position = UDim2.fromOffset(10, 0) end
 end
 
-local function loadModule(file)
-	if isfile('newvape/'..file) then
-		return loadstring(readfile('newvape/'..file), file)()
-	else
-		local success, data = pcall(downloadFile, 'newvape/'..file)
-		if success then
-			return loadstring(data, file)()
+local Fly
+
+-- Blatant/Speed
+run(function()
+local Speed
+local Value
+local CustomProperties
+
+Speed = vape.Categories.Blatant:CreateModule({
+	Name = 'Speed',
+	Function = function(callback)
+		frictionTable.Speed = callback and CustomProperties.Enabled or nil
+		updateVelocity()
+		if callback then
+			Speed:Clean(runService.PreSimulation:Connect(function(dt)
+				if entitylib.isAlive and not (Fly and Fly.Enabled) then
+					local hum = entitylib.character.Humanoid
+					local state = entitylib.character.Humanoid:GetState()
+					if state == Enum.HumanoidStateType.Climbing then return end
+					if hum.Sit then return end
+
+					local root = entitylib.character.RootPart
+					root.AssemblyLinearVelocity = (hum.MoveDirection * Value.Value) + Vector3.new(0, root.AssemblyLinearVelocity.Y, 0)
+				end
+			end))
 		end
+	end,
+	Tooltip = 'Increases your movement with various methods.'
+})
+Value = Speed:CreateSlider({
+	Name = 'Speed',
+	Min = 1,
+	Max = 150,
+	Default = 50,
+	Suffix = function(val)
+		return val == 1 and 'stud' or 'studs'
 	end
+})
+CustomProperties = Speed:CreateToggle({
+	Name = 'Custom Properties',
+	Function = function()
+		if Speed.Enabled then
+			Speed:Toggle()
+			Speed:Toggle()
+		end
+	end,
+	Default = true
+})
+end)
+
+-- Blatant/Fly
+local LongJump
+run(function()
+	local Value
+	local UpKey
+	local DownKey
+	local VerticalValue
+	local CustomProperties
+	local PlatformStanding
+	local Platform, YLevel, OldYLevel
+	local up, down = 0, 0
+
+	Fly = vape.Categories.Blatant:CreateModule({
+		Name = 'Fly',
+		Function = function(callback)
+			frictionTable.Fly = callback and CustomProperties.Enabled or nil
+			updateVelocity()
+			if callback then
+				Platform = Instance.new('Part')
+				Platform.CanQuery = false
+				Platform.Anchored = true
+				Platform.Size = Vector3.new(100, 1, 100)
+				Platform.Transparency = 1
+
+				Fly:Clean(Platform)
+				Fly:Clean(runService.PreSimulation:Connect(function(dt)
+					if entitylib.isAlive then
+						if PlatformStanding.Enabled then
+							entitylib.character.Humanoid.PlatformStand = true
+							entitylib.character.RootPart.AssemblyAngularVelocity = Vector3.zero
+							entitylib.character.RootPart.CFrame = CFrame.lookAlong(entitylib.character.RootPart.CFrame.Position, gameCamera.CFrame.LookVector)
+						end
+
+						local hum = entitylib.character.Humanoid
+						local root = entitylib.character.RootPart
+						if hum.Sit then
+							local packet = jb.VehicleController.GetLocalVehiclePacket()
+							local wheel = packet and packet.EngineThrusters[1]
+
+							if wheel then
+								local suspension = (packet.Model:GetAttribute('GarageSuspensionHeight') or 0) + packet.Height
+								lplr.Character:SetAttribute('DoNotAllowVehicleExit', table.find(UpKey.Keys, 'Space') and true or false)
+								packet.Seat.CFrame += Vector3.new(0, (up + down) * VerticalValue.Value * dt, 0)
+								Platform.Position = wheel.Engine.Position + Vector3.new(0, -suspension, 0)
+								Platform.Parent = gameCamera
+							end
+
+							return
+						else
+							Platform.Parent = nil
+						end
+
+						root.AssemblyLinearVelocity = (hum.MoveDirection * Value.Value) + Vector3.new(0, 2.25 + ((up + down) * VerticalValue.Value), 0)
+					else
+						YLevel = nil
+						OldYLevel = nil
+					end
+				end))
+
+				up, down = 0, 0
+
+				Fly:Clean(UpKey.Triggered:Connect(function(isDown)
+					up = isDown and 1 or 0
+				end))
+
+				Fly:Clean(DownKey.Triggered:Connect(function(isDown)
+					down = isDown and -1 or 0
+				end))
+
+				if inputService.TouchEnabled then
+					pcall(function()
+						local jumpButton = lplr.PlayerGui.TouchGui.TouchControlFrame.JumpButton
+						Fly:Clean(jumpButton:GetPropertyChangedSignal('ImageRectOffset'):Connect(function()
+							up = jumpButton.ImageRectOffset.X == 146 and 1 or 0
+						end))
+					end)
+				end
+			else
+				YLevel, OldYLevel = nil, nil
+				if entitylib.isAlive then
+					if PlatformStanding.Enabled then
+						entitylib.character.Humanoid.PlatformStand = false
+					end
+
+					lplr.Character:SetAttribute('DoNotAllowVehicleExit', nil)
+				end
+			end
+		end,
+		Tooltip = 'Makes you go zoom.'
+	})
+	UpKey = Fly:CreateBind({
+		Name = 'Up Key',
+		Default = {'Space'},
+		Hold = true,
+		Tooltip = 'Keybind to fly upwards'
+	})
+	DownKey = Fly:CreateBind({
+		Name = 'Down Key',
+		Default = {'LeftControl'},
+		Hold = true,
+		Tooltip = 'Keybind to fly downwards'
+	})
+	Value = Fly:CreateSlider({
+		Name = 'Speed',
+		Min = 1,
+		Max = 150,
+		Default = 50,
+		Suffix = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})
+	VerticalValue = Fly:CreateSlider({
+		Name = 'Vertical Speed',
+		Min = 1,
+		Max = 150,
+		Default = 50,
+		Suffix = function(val)
+			return val == 1 and 'stud' or 'studs'
+		end
+	})
+	PlatformStanding = Fly:CreateToggle({
+		Name = 'PlatformStand',
+		Function = function(callback)
+			if Fly.Enabled then
+				entitylib.character.Humanoid.PlatformStand = callback
+			end
+		end,
+		Tooltip = 'Forces the character to look infront of the camera'
+	})
+	CustomProperties = Fly:CreateToggle({
+		Name = 'Custom Properties',
+		Function = function()
+			if Fly.Enabled then
+				Fly:Toggle()
+				Fly:Toggle()
+			end
+		end,
+		Default = true
+	})
+end)
+
+-- Blatant/Jesus
+run(function()
+local Jesus
+local params = RaycastParams.new()
+params.FilterType = Enum.RaycastFilterType.Include
+
+Jesus = vape.Categories.Blatant:CreateModule({
+	Name = 'Jesus',
+	Function = function(callback)
+		if callback then
+			local terrain = workspace:FindFirstChildWhichIsA('Terrain')
+			params.FilterDescendantsInstances = {terrain}
+			local Platform = Instance.new('Part')
+			Platform.CanQuery = false
+			Platform.CanTouch = false
+			Platform.Anchored = true
+			Platform.Size = Vector3.new(3, 1, 3)
+			Platform.Transparency = 1
+			Platform.Parent = gameCamera
+
+			Jesus:Clean(Platform)
+			Jesus:Clean(runService.PreSimulation:Connect(function()
+				if entitylib.isAlive then
+					local root = entitylib.character.RootPart
+					local ray = workspace:Raycast(root.Position, Vector3.new(0, -((root.Size.Y / 2) + entitylib.character.HipHeight + math.abs(root.AssemblyLinearVelocity.Y * 0.032)), 0), params)
+
+					if ray and ray.Material == Enum.Material.Water then
+						Platform.CFrame = CFrame.new(ray.Position)
+					else
+						Platform.CFrame = CFrame.new(10000, 10000, 10000)
+					end
+				end
+			end))
+		end
+	end,
+	Tooltip = 'Allow you to stand on terrain water'
+})
+end)
+
+-- Combat/SilentAim
+run(function()
+local SilentAim
+local Target
+local Mode
+local Range
+local HitChance
+local HeadshotChance
+local Wallbang
+local CircleColor
+local CircleTransparency
+local CircleFilled
+local CircleObject
+local rand = Random.new()
+local old
+local ProjectileRaycast = RaycastParams.new()
+ProjectileRaycast.RespectCanCollide = true
+
+local function getMousePosition()
+	if inputService.TouchEnabled then
+		return gameCamera.ViewportSize / 2
+	end
+
+	return inputService:GetMouseLocation()
 end
 
-loadModule('games/jailbreak/606849621 - main/Blatant/Speed.lua')
-loadModule('games/jailbreak/606849621 - main/Blatant/Fly.lua')
-loadModule('games/jailbreak/606849621 - main/Blatant/Jesus.lua')
-loadModule('games/jailbreak/606849621 - main/Combat/SilentAim.lua')
-loadModule('games/jailbreak/606849621 - main/Combat/Sprint.lua')
-loadModule('games/jailbreak/606849621 - main/Render/ESP.lua')
+local function getTarget(origin, limit, attackcheck)
+	if rand.NextNumber(rand, 0, 100) > HitChance.Value then
+		return
+	end
+
+	local targetPart = (rand.NextNumber(rand, 0, 100) < HeadshotChance.Value) and 'Head' or 'RootPart'
+	local entity = entitylib['Entity'..Mode.Value]({
+		Range = Mode.Value == 'Position' and math.min(Range.Value, limit) or Range.Value,
+		RangePosition = limit,
+		Wallcheck = Target.Walls.Enabled and true or nil,
+		Wallbang = Wallbang.Enabled and entitylib.character.RootPart.Position or nil,
+		Part = targetPart,
+		Origin = origin.Position,
+		Players = Target.Players.Enabled,
+		NPCs = Target.NPCs.Enabled
+	})
+
+	if entity then
+		targetinfo.Targets[entity] = tick() + 1
+	end
+
+	return entity, entity and entity[targetPart], origin
+end
+
+local function Hook(...)
+	local item = ...
+
+	if item.Local then
+		OriginScanner:UpdateIgnore(item.BulletEmitter.IgnoreList)
+		shootTimer = os.clock() + 0.1
+		local entity, targetPart, origin = getTarget(item.Tip.CFrame, (item.Config.BulletSpeed or 1000) * item.BulletEmitter.LifeSpan)
+
+		if entity then
+			local oldTip
+			local aimSpot = targetPart.Position
+
+			if Wallbang.Enabled then
+				local ray = workspace:Raycast(targetPart.Position, (origin.Position - targetPart.Position), OriginScanner.Ray)
+
+				if ray then
+					local newOrigin, hit = OriginScanner:Scan(entitylib.character.RootPart.Position, targetPart.Position, ray.Position + ray.Normal * 0.01, targetPart, entity)
+
+					if newOrigin then
+						oldTip = item.Tip.CFrame
+						origin = CFrame.lookAt(newOrigin, targetPart.Position)
+						item.Tip.CFrame = origin
+
+						if hit then
+							local part = Instance.new('Part')
+							part.Anchored = true
+							part.CanCollide = false
+							part.Position = hit
+							part.Size = Vector3.one * 1
+							part.Transparency = 1
+							part.Parent = entity.Character
+							task.spawn(function()
+								for i = 1, 2 do
+									runService.Heartbeat:Wait()
+								end
+
+								part:Destroy()
+							end)
+
+							aimSpot = hit
+						end
+					end
+				end
+			end
+
+			ProjectileRaycast.FilterDescendantsInstances = {gameCamera, entity.Character, workspace.Vehicles}
+			ProjectileRaycast.CollisionGroup = entity.RootPart.CollisionGroup
+
+			local trajectory = oldBulletUpdate and aimSpot or prediction.SolveTrajectory(origin.Position, item.Config.BulletSpeed or 1000, math.abs(item.BulletEmitter.GravityVector.Y), targetPart.Position, entity.RootPart.AssemblyLinearVelocity, workspace.Gravity, entity.HipHeight, nil, ProjectileRaycast)
+			if trajectory then
+				targetinfo.Targets[entity] = tick() + 1
+				item.TipDirection = CFrame.lookAt(origin.Position, trajectory).LookVector
+				aimTimer = os.clock() + 0.3
+				aimVec = aimSpot
+			end
+
+			if oldTip then
+				local call = table.pack(old(...))
+				item.Tip.CFrame = oldTip
+				return unpack(call, 1, call.n)
+			end
+		end
+	end
+
+	return old(...)
+end
+
+SilentAim = vape.Categories.Combat:CreateModule({
+	Name = 'SilentAim',
+	Function = function(callback)
+		if CircleObject then
+			CircleObject.Visible = callback and Mode.Value == 'Mouse'
+		end
+
+		if Wallbang.Enabled then
+			debug.setconstant(jb.GunController.ShootCheckConditions, 1, callback and '_Tip' or 'Tip')
+		end
+
+		if callback then
+			old = hookfunction(jb.GunController.ShootOther, function(...)
+				return Hook(...)
+			end)
+
+			repeat
+				if CircleObject then
+					CircleObject.Position = getMousePosition()
+				end
+
+				task.wait()
+			until not SilentAim.Enabled
+		else
+			if old then
+				restorefunction(jb.GunController.ShootOther)
+				old = nil
+			end
+		end
+	end,
+	Tooltip = 'Silently adjusts your aim towards the enemy'
+})
+Target = SilentAim:CreateTargets({
+	Players = true
+})
+Mode = SilentAim:CreateDropdown({
+	Name = 'Mode',
+	List = {'Mouse', 'Position'},
+	Function = function(val)
+		if CircleObject then
+			CircleObject.Visible = SilentAim.Enabled and val == 'Mouse'
+		end
+	end,
+	Tooltip = 'Mouse - Checks for entities near the mouses position\nPosition - Checks for entities near the local character'
+})
+Range = SilentAim:CreateSlider({
+	Name = 'Range',
+	Min = 1,
+	Max = 1500,
+	Default = 150,
+	Function = function(val)
+		if CircleObject then
+			CircleObject.Radius = val
+		end
+	end,
+	Suffix = function(val)
+		return val == 1 and 'stud' or 'studs'
+	end
+})
+HitChance = SilentAim:CreateSlider({
+	Name = 'Hit Chance',
+	Min = 0,
+	Max = 100,
+	Default = 85,
+	Suffix = '%'
+})
+HeadshotChance = SilentAim:CreateSlider({
+	Name = 'Headshot Chance',
+	Min = 0,
+	Max = 100,
+	Default = 65,
+	Suffix = '%'
+})
+Wallbang = SilentAim:CreateToggle({
+	Name = 'Wallbang',
+	Function = function(callback)
+		if SilentAim.Enabled then
+			debug.setconstant(jb.GunController.ShootCheckConditions, 1, callback and '_Tip' or 'Tip')
+		end
+	end,
+	Tooltip = 'Allow you to shoot people through walls when specific conditions are met.\n(If the entity has a valid hitbox position exposed or if the shoot position can be moved past walls (eg hugging walls))'
+})
+SilentAim:CreateToggle({
+	Name = 'Range Circle',
+	Function = function(callback)
+		if callback then
+			CircleObject = Drawing.new('Circle')
+			CircleObject.Filled = CircleFilled.Enabled
+			CircleObject.Color = Color3.fromHSV(CircleColor.Hue, CircleColor.Sat, CircleColor.Value)
+			CircleObject.Position = vape.gui.AbsoluteSize / 2
+			CircleObject.Radius = Range.Value
+			CircleObject.NumSides = 100
+			CircleObject.Transparency = 1 - CircleTransparency.Value
+			CircleObject.Visible = SilentAim.Enabled and Mode.Value == 'Mouse'
+		else
+			pcall(function()
+				CircleObject.Visible = false
+				CircleObject:Remove()
+			end)
+		end
+		CircleColor.Object.Visible = callback
+		CircleTransparency.Object.Visible = callback
+		CircleFilled.Object.Visible = callback
+	end
+})
+CircleColor = SilentAim:CreateColorSlider({
+	Name = 'Circle Color',
+	Function = function(hue, sat, val)
+		if CircleObject then
+			CircleObject.Color = Color3.fromHSV(hue, sat, val)
+		end
+	end,
+	Darker = true,
+	Visible = false
+})
+CircleTransparency = SilentAim:CreateSlider({
+	Name = 'Transparency',
+	Min = 0,
+	Max = 1,
+	Decimal = 10,
+	Default = 0.5,
+	Function = function(val)
+		if CircleObject then
+			CircleObject.Transparency = 1 - val
+		end
+	end,
+	Darker = true,
+	Visible = false
+})
+CircleFilled = SilentAim:CreateToggle({
+	Name = 'Circle Filled',
+	Function = function(callback)
+		if CircleObject then
+			CircleObject.Filled = callback
+		end
+	end,
+	Darker = true,
+	Visible = false
+})
+end)
+
+-- Combat/Sprint
+run(function()
+local Sprint
+
+Sprint = vape.Categories.Combat:CreateModule({
+	Name = 'Sprint',
+	Function = function(callback)
+		if callback then
+			repeat
+				debug.setupvalue(jb.WalkSpeedFun, 9, true)
+				task.wait(0.05)
+			until not Sprint.Enabled
+		end
+	end,
+	Tooltip = 'Sets your sprinting to true.'
+})
+end)
+
+-- Render/ESP
+run(function()
+local ESP
+local Targets
+local Color
+local Method
+local BoundingBox
+local Filled
+local HealthBar
+local Name
+local DisplayName
+local Background
+local Teammates
+local Distance
+local DistanceLimit
+local Reference = {}
+local methodused
+
+local function ESPWorldToViewport(pos)
+	local newpos = gameCamera:WorldToViewportPoint(gameCamera.CFrame:pointToWorldSpace(gameCamera.CFrame:PointToObjectSpace(pos)))
+	return Vector2.new(newpos.X, newpos.Y)
+end
+
+local ESPAdded = {
+	Drawing2D = function(ent)
+		if not Targets.Players.Enabled and ent.Player then return end
+		if not Targets.NPCs.Enabled and ent.NPC then return end
+		if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+		if vape.ThreadFix then
+			setthreadidentity(8)
+		end
+		local EntityESP = {}
+		EntityESP.Main = Drawing.new('Square')
+		EntityESP.Main.Transparency = BoundingBox.Enabled and 1 or 0
+		EntityESP.Main.ZIndex = 2
+		EntityESP.Main.Filled = false
+		EntityESP.Main.Thickness = 1
+		EntityESP.Main.Color = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+
+		if BoundingBox.Enabled then
+			EntityESP.Border = Drawing.new('Square')
+			EntityESP.Border.Transparency = 0.35
+			EntityESP.Border.ZIndex = 1
+			EntityESP.Border.Thickness = 1
+			EntityESP.Border.Filled = false
+			EntityESP.Border.Color = Color3.new()
+			EntityESP.Border2 = Drawing.new('Square')
+			EntityESP.Border2.Transparency = 0.35
+			EntityESP.Border2.ZIndex = 1
+			EntityESP.Border2.Thickness = 1
+			EntityESP.Border2.Filled = Filled.Enabled
+			EntityESP.Border2.Color = Color3.new()
+		end
+
+		if HealthBar.Enabled then
+			EntityESP.HealthLine = Drawing.new('Line')
+			EntityESP.HealthLine.Thickness = 1
+			EntityESP.HealthLine.ZIndex = 2
+			EntityESP.HealthLine.Color = Color3.fromHSV(math.clamp(ent.Health / ent.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
+			EntityESP.HealthBorder = Drawing.new('Line')
+			EntityESP.HealthBorder.Thickness = 3
+			EntityESP.HealthBorder.Transparency = 0.35
+			EntityESP.HealthBorder.ZIndex = 1
+			EntityESP.HealthBorder.Color = Color3.new()
+		end
+		
+		if Name.Enabled then
+			if Background.Enabled then
+				EntityESP.TextBKG = Drawing.new('Square')
+				EntityESP.TextBKG.Transparency = 0.35
+				EntityESP.TextBKG.ZIndex = 0
+				EntityESP.TextBKG.Thickness = 1
+				EntityESP.TextBKG.Filled = true
+				EntityESP.TextBKG.Color = Color3.new()
+			end
+			EntityESP.Drop = Drawing.new('Text')
+			EntityESP.Drop.Color = Color3.new()
+			EntityESP.Drop.Text = ent.Player and whitelist:tag(ent.Player, true)..(DisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name) or ent.Character.Name
+			EntityESP.Drop.ZIndex = 1
+			EntityESP.Drop.Center = true
+			EntityESP.Drop.Size = 20
+			EntityESP.Text = Drawing.new('Text')
+			EntityESP.Text.Text = EntityESP.Drop.Text
+			EntityESP.Text.ZIndex = 2
+			EntityESP.Text.Color = EntityESP.Main.Color
+			EntityESP.Text.Center = true
+			EntityESP.Text.Size = 20
+		end
+		Reference[ent] = EntityESP
+	end,
+	Drawing3D = function(ent)
+		if not Targets.Players.Enabled and ent.Player then return end
+		if not Targets.NPCs.Enabled and ent.NPC then return end
+		if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+		if vape.ThreadFix then
+			setthreadidentity(8)
+		end
+		local EntityESP = {}
+		EntityESP.Line1 = Drawing.new('Line')
+		EntityESP.Line2 = Drawing.new('Line')
+		EntityESP.Line3 = Drawing.new('Line')
+		EntityESP.Line4 = Drawing.new('Line')
+		EntityESP.Line5 = Drawing.new('Line')
+		EntityESP.Line6 = Drawing.new('Line')
+		EntityESP.Line7 = Drawing.new('Line')
+		EntityESP.Line8 = Drawing.new('Line')
+		EntityESP.Line9 = Drawing.new('Line')
+		EntityESP.Line10 = Drawing.new('Line')
+		EntityESP.Line11 = Drawing.new('Line')
+		EntityESP.Line12 = Drawing.new('Line')
+
+		local color = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+		for _, v in EntityESP do
+			v.Thickness = 1
+			v.Color = color
+		end
+
+		Reference[ent] = EntityESP
+	end,
+	DrawingSkeleton = function(ent)
+		if not Targets.Players.Enabled and ent.Player then return end
+		if not Targets.NPCs.Enabled and ent.NPC then return end
+		if Teammates.Enabled and (not ent.Targetable) and (not ent.Friend) then return end
+		if vape.ThreadFix then
+			setthreadidentity(8)
+		end
+		local EntityESP = {}
+		EntityESP.Head = Drawing.new('Line')
+		EntityESP.HeadFacing = Drawing.new('Line')
+		EntityESP.Torso = Drawing.new('Line')
+		EntityESP.UpperTorso = Drawing.new('Line')
+		EntityESP.LowerTorso = Drawing.new('Line')
+		EntityESP.LeftArm = Drawing.new('Line')
+		EntityESP.RightArm = Drawing.new('Line')
+		EntityESP.LeftLeg = Drawing.new('Line')
+		EntityESP.RightLeg = Drawing.new('Line')
+
+		local color = entitylib.getEntityColor(ent) or Color3.fromHSV(Color.Hue, Color.Sat, Color.Value)
+		for _, v in EntityESP do
+			v.Thickness = 2
+			v.Color = color
+		end
+
+		Reference[ent] = EntityESP
+	end
+}
+
+local ESPRemoved = {
+	Drawing2D = function(ent)
+		local EntityESP = Reference[ent]
+		if EntityESP then
+			if vape.ThreadFix then
+				setthreadidentity(8)
+			end
+			Reference[ent] = nil
+			for _, v in EntityESP do
+				pcall(function()
+					v.Visible = false
+					v:Remove()
+				end)
+			end
+		end
+	end
+}
+ESPRemoved.Drawing3D = ESPRemoved.Drawing2D
+ESPRemoved.DrawingSkeleton = ESPRemoved.Drawing2D
+
+local ESPUpdated = {
+	Drawing2D = function(ent)
+		local EntityESP = Reference[ent]
+		if EntityESP then
+			if vape.ThreadFix then
+				setthreadidentity(8)
+			end
+			
+			if EntityESP.HealthLine then
+				EntityESP.HealthLine.Color = Color3.fromHSV(math.clamp(ent.Health / ent.MaxHealth, 0, 1) / 2.5, 0.89, 0.75)
+			end
+
+			if EntityESP.Text then
+				EntityESP.Text.Text = ent.Player and whitelist:tag(ent.Player, true)..(DisplayName.Enabled and ent.Player.DisplayName or ent.Player.Name) or ent.Character.Name
+				EntityESP.Drop.Text = EntityESP.Text.Text
+			end
+		end
+	end
+}
+
+local ColorFunc = {
+	Drawing2D = function(hue, sat, val)
+		local color = Color3.fromHSV(hue, sat, val)
+		for i, v in Reference do
+			v.Main.Color = entitylib.getEntityColor(i) or color
+			if v.Text then
+				v.Text.Color = v.Main.Color
+			end
+		end
+	end,
+	Drawing3D = function(hue, sat, val)
+		local color = Color3.fromHSV(hue, sat, val)
+		for i, v in Reference do
+			local playercolor = entitylib.getEntityColor(i) or color
+			for _, v2 in v do
+				v2.Color = playercolor
+			end
+		end
+	end
+}
+ColorFunc.DrawingSkeleton = ColorFunc.Drawing3D
+
+local ESPLoop = {
+	Drawing2D = function()
+		for ent, EntityESP in Reference do
+			if Distance.Enabled then
+				local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude or math.huge
+				if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
+					for _, obj in EntityESP do
+						obj.Visible = false
+					end
+					continue
+				end
+			end
+
+			local rootPos, rootVis = gameCamera:WorldToViewportPoint(ent.RootPart.Position)
+			for _, obj in EntityESP do
+				obj.Visible = rootVis
+			end
+			if not rootVis then continue end
+
+			local topPos = gameCamera:WorldToViewportPoint((CFrame.lookAlong(ent.RootPart.Position, gameCamera.CFrame.LookVector) * CFrame.new(2, ent.HipHeight, 0)).p)
+			local bottomPos = gameCamera:WorldToViewportPoint((CFrame.lookAlong(ent.RootPart.Position, gameCamera.CFrame.LookVector) * CFrame.new(-2, -ent.HipHeight - 1, 0)).p)
+			local sizex, sizey = topPos.X - bottomPos.X, topPos.Y - bottomPos.Y
+			local posx, posy = (rootPos.X - sizex / 2),  ((rootPos.Y - sizey / 2))
+			EntityESP.Main.Position = Vector2.new(posx, posy) // 1
+			EntityESP.Main.Size = Vector2.new(sizex, sizey) // 1
+			if EntityESP.Border then
+				EntityESP.Border.Position = Vector2.new(posx - 1, posy + 1) // 1
+				EntityESP.Border.Size = Vector2.new(sizex + 2, sizey - 2) // 1
+				EntityESP.Border2.Position = Vector2.new(posx + 1, posy - 1) // 1
+				EntityESP.Border2.Size = Vector2.new(sizex - 2, sizey + 2) // 1
+			end
+
+			if EntityESP.HealthLine then
+				local healthposy = sizey * math.clamp(ent.Health / ent.MaxHealth, 0, 1)
+				EntityESP.HealthLine.Visible = ent.Health > 0
+				EntityESP.HealthLine.From = Vector2.new(posx - 6, posy + (sizey - (sizey - healthposy))) // 1
+				EntityESP.HealthLine.To = Vector2.new(posx - 6, posy) // 1
+				EntityESP.HealthBorder.From = Vector2.new(posx - 6, posy + 1) // 1
+				EntityESP.HealthBorder.To = Vector2.new(posx - 6, (posy + sizey) - 1) // 1
+			end
+
+			if EntityESP.Text then
+				EntityESP.Text.Position = Vector2.new(posx + (sizex / 2), posy + (sizey - 28)) // 1
+				EntityESP.Drop.Position = EntityESP.Text.Position + Vector2.new(1, 1)
+				if EntityESP.TextBKG then
+					EntityESP.TextBKG.Size = EntityESP.Text.TextBounds + Vector2.new(8, 4)
+					EntityESP.TextBKG.Position = EntityESP.Text.Position - Vector2.new(4 + (EntityESP.Text.TextBounds.X / 2), 0)
+				end
+			end
+		end
+	end,
+	Drawing3D = function()
+		for ent, EntityESP in Reference do
+			if Distance.Enabled then
+				local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude or math.huge
+				if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
+					for _, obj in EntityESP do
+						obj.Visible = false
+					end
+					continue
+				end
+			end
+
+			local _, rootVis = gameCamera:WorldToViewportPoint(ent.RootPart.Position)
+			for _, obj in EntityESP do
+				obj.Visible = rootVis
+			end
+			if not rootVis then continue end
+
+			local point1 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(1.5, ent.HipHeight, 1.5))
+			local point2 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(1.5, -ent.HipHeight, 1.5))
+			local point3 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(-1.5, ent.HipHeight, 1.5))
+			local point4 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(-1.5, -ent.HipHeight, 1.5))
+			local point5 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(1.5, ent.HipHeight, -1.5))
+			local point6 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(1.5, -ent.HipHeight, -1.5))
+			local point7 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(-1.5, ent.HipHeight, -1.5))
+			local point8 = ESPWorldToViewport(ent.RootPart.Position + Vector3.new(-1.5, -ent.HipHeight, -1.5))
+			EntityESP.Line1.From = point1
+			EntityESP.Line1.To = point2
+			EntityESP.Line2.From = point3
+			EntityESP.Line2.To = point4
+			EntityESP.Line3.From = point5
+			EntityESP.Line3.To = point6
+			EntityESP.Line4.From = point7
+			EntityESP.Line4.To = point8
+			EntityESP.Line5.From = point1
+			EntityESP.Line5.To = point3
+			EntityESP.Line6.From = point1
+			EntityESP.Line6.To = point5
+			EntityESP.Line7.From = point5
+			EntityESP.Line7.To = point7
+			EntityESP.Line8.From = point7
+			EntityESP.Line8.To = point3
+			EntityESP.Line9.From = point2
+			EntityESP.Line9.To = point4
+			EntityESP.Line10.From = point2
+			EntityESP.Line10.To = point6
+			EntityESP.Line11.From = point6
+			EntityESP.Line11.To = point8
+			EntityESP.Line12.From = point8
+			EntityESP.Line12.To = point4
+		end
+	end,
+	DrawingSkeleton = function()
+		for ent, EntityESP in Reference do
+			if Distance.Enabled then
+				local distance = entitylib.isAlive and (entitylib.character.RootPart.Position - ent.RootPart.Position).Magnitude or math.huge
+				if distance < DistanceLimit.ValueMin or distance > DistanceLimit.ValueMax then
+					for _, obj in EntityESP do
+						obj.Visible = false
+					end
+					continue
+				end
+			end
+
+			local _, rootVis = gameCamera:WorldToViewportPoint(ent.RootPart.Position)
+			for _, obj in EntityESP do
+				obj.Visible = rootVis
+			end
+			if not rootVis then continue end
+			
+			local rigcheck = ent.Humanoid.RigType == Enum.HumanoidRigType.R6
+			pcall(function()
+				local offset = rigcheck and CFrame.new(0, -0.8, 0) or CFrame.identity
+				local head = ESPWorldToViewport((ent.Head.CFrame).p)
+				local headfront = ESPWorldToViewport((ent.Head.CFrame * CFrame.new(0, 0, -0.5)).p)
+				local toplefttorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(-1.5, 0.8, 0)).p)
+				local toprighttorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(1.5, 0.8, 0)).p)
+				local toptorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(0, 0.8, 0)).p)
+				local bottomtorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(0, -0.8, 0)).p)
+				local bottomlefttorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(-0.5, -0.8, 0)).p)
+				local bottomrighttorso = ESPWorldToViewport((ent.Character[(rigcheck and 'Torso' or 'UpperTorso')].CFrame * CFrame.new(0.5, -0.8, 0)).p)
+				local leftarm = ESPWorldToViewport((ent.Character[(rigcheck and 'Left Arm' or 'LeftHand')].CFrame * offset).p)
+				local rightarm = ESPWorldToViewport((ent.Character[(rigcheck and 'Right Arm' or 'RightHand')].CFrame * offset).p)
+				local leftleg = ESPWorldToViewport((ent.Character[(rigcheck and 'Left Leg' or 'LeftFoot')].CFrame * offset).p)
+				local rightleg = ESPWorldToViewport((ent.Character[(rigcheck and 'Right Leg' or 'RightFoot')].CFrame * offset).p)
+				EntityESP.Head.From = toptorso
+				EntityESP.Head.To = head
+				EntityESP.HeadFacing.From = head
+				EntityESP.HeadFacing.To = headfront
+				EntityESP.UpperTorso.From = toplefttorso
+				EntityESP.UpperTorso.To = toprighttorso
+				EntityESP.Torso.From = toptorso
+				EntityESP.Torso.To = bottomtorso
+				EntityESP.LowerTorso.From = bottomlefttorso
+				EntityESP.LowerTorso.To = bottomrighttorso
+				EntityESP.LeftArm.From = toplefttorso
+				EntityESP.LeftArm.To = leftarm
+				EntityESP.RightArm.From = toprighttorso
+				EntityESP.RightArm.To = rightarm
+				EntityESP.LeftLeg.From = bottomlefttorso
+				EntityESP.LeftLeg.To = leftleg
+				EntityESP.RightLeg.From = bottomrighttorso
+				EntityESP.RightLeg.To = rightleg
+			end)
+		end
+	end
+}
+
+ESP = vape.Categories.Render:CreateModule({
+	Name = 'ESP',
+	Function = function(callback)
+		if callback then
+			methodused = 'Drawing'..Method.Value
+			if ESPRemoved[methodused] then
+				ESP:Clean(entitylib.Events.EntityRemoved:Connect(ESPRemoved[methodused]))
+			end
+			if ESPAdded[methodused] then
+				for _, v in entitylib.List do
+					if Reference[v] then
+						ESPRemoved[methodused](v)
+					end
+					ESPAdded[methodused](v)
+				end
+				ESP:Clean(entitylib.Events.EntityAdded:Connect(function(ent)
+					if Reference[ent] then
+						ESPRemoved[methodused](ent)
+					end
+					ESPAdded[methodused](ent)
+				end))
+			end
+			if ESPUpdated[methodused] then
+				ESP:Clean(entitylib.Events.EntityUpdated:Connect(ESPUpdated[methodused]))
+				for _, v in entitylib.List do
+					ESPUpdated[methodused](v)
+				end
+			end
+			if ColorFunc[methodused] then
+				ESP:Clean(vape.Categories.Friends.ColorUpdate.Event:Connect(function()
+					ColorFunc[methodused](Color.Hue, Color.Sat, Color.Value)
+				end))
+			end
+			if ESPLoop[methodused] then
+				ESP:Clean(runService.RenderStepped:Connect(ESPLoop[methodused]))
+			end
+		else
+			if ESPRemoved[methodused] then
+				for i in Reference do
+					ESPRemoved[methodused](i)
+				end
+			end
+		end
+	end,
+	Tooltip = 'Extra Sensory Perception\nRenders an ESP on players.'
+})
+Targets = ESP:CreateTargets({
+	Players = true,
+	Function = function()
+		if ESP.Enabled then
+			ESP:Toggle()
+			ESP:Toggle()
+		end
+	end
+})
+Method = ESP:CreateDropdown({
+	Name = 'Mode',
+	List = {'2D', '3D', 'Skeleton'},
+	Function = function(val)
+		if ESP.Enabled then
+			ESP:Toggle()
+			ESP:Toggle()
+		end
+		BoundingBox.Object.Visible = (val == '2D')
+		Filled.Object.Visible = (val == '2D')
+		HealthBar.Object.Visible = (val == '2D')
+		Name.Object.Visible = (val == '2D')
+		DisplayName.Object.Visible = Name.Object.Visible and Name.Enabled
+		Background.Object.Visible = Name.Object.Visible and Name.Enabled
+	end,
+})
+Color = ESP:CreateColorSlider({
+	Name = 'Player Color',
+	Function = function(hue, sat, val)
+		if ESP.Enabled and ColorFunc[methodused] then
+			ColorFunc[methodused](hue, sat, val)
+		end
+	end
+})
+BoundingBox = ESP:CreateToggle({
+	Name = 'Bounding Box',
+	Function = function()
+		if ESP.Enabled then
+			ESP:Toggle()
+			ESP:Toggle()
+		end
+	end,
+	Default = true,
+	Darker = true
+})
+Filled = ESP:CreateToggle({
+	Name = 'Filled',
+	Function = function()
+		if ESP.Enabled then
+			ESP:Toggle()
+			ESP:Toggle()
+		end
+	end,
+	Darker = true
+})
+HealthBar = ESP:CreateToggle({
+	Name = 'Health Bar',
+	Function = function()
+		if ESP.Enabled then
+			ESP:Toggle()
+			ESP:Toggle()
+		end
+	end,
+	Darker = true
+})
+Name = ESP:CreateToggle({
+	Name = 'Name',
+	Function = function(callback)
+		if ESP.Enabled then
+			ESP:Toggle()
+			ESP:Toggle()
+		end
+		DisplayName.Object.Visible = callback
+		Background.Object.Visible = callback
+	end,
+	Darker = true
+})
+DisplayName = ESP:CreateToggle({
+	Name = 'Use Displayname',
+	Function = function()
+		if ESP.Enabled then
+			ESP:Toggle()
+			ESP:Toggle()
+		end
+	end,
+	Default = true,
+	Darker = true
+})
+Background = ESP:CreateToggle({
+	Name = 'Show Background',
+	Function = function()
+		if ESP.Enabled then
+			ESP:Toggle()
+			ESP:Toggle()
+		end
+	end,
+	Darker = true
+})
+Teammates = ESP:CreateToggle({
+	Name = 'Priority Only',
+	Function = function()
+		if ESP.Enabled then
+			ESP:Toggle()
+			ESP:Toggle()
+		end
+	end,
+	Default = true,
+	Tooltip = 'Hides teammates & non targetable entities'
+})
+Distance = ESP:CreateToggle({
+	Name = 'Distance Check',
+	Function = function(callback)
+		DistanceLimit.Object.Visible = callback
+	end
+})
+DistanceLimit = ESP:CreateTwoSlider({
+	Name = 'Player Distance',
+	Min = 0,
+	Max = 256,
+	DefaultMin = 0,
+	DefaultMax = 64,
+	Darker = true,
+	Visible = false
+})
+end)
