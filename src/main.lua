@@ -26,9 +26,15 @@ local playersService = cloneref(game:GetService('Players'))
 
 local function downloadFile(path, func)
 	if not isfile(path) then
+		local rel = select(1, path:gsub('newvape/', ''))
 		local suc, res = pcall(function()
-			return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..select(1, path:gsub('newvape/', '')), true)
+			return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel, true)
 		end)
+		if (not suc or res == '404: Not Found') and rel:find('assets/new/') then
+			suc, res = pcall(function()
+				return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel:gsub('assets/new/', 'guis/new/assets/'), true)
+			end)
+		end
 		if not suc or res == '404: Not Found' then
 			error(res)
 		end

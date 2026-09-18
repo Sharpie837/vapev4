@@ -202,9 +202,16 @@ do
 		if not isfile(path) then
 			createDownloader(path)
 
+			local rel = select(1, path:gsub('newvape/', ''))
 			local success, data = pcall(function()
-				return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..select(1, path:gsub('newvape/', '')), true)
+				return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel, true)
 			end)
+
+			if (not success or data == '404: Not Found') and rel:find('assets/new/') then
+				success, data = pcall(function()
+					return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel:gsub('assets/new/', 'guis/new/assets/'), true)
+				end)
+			end
 
 			if not success or data == '404: Not Found' then
 				error(data)
