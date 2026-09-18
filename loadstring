@@ -1,0 +1,1 @@
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Sharpie837/vapev4/main/NewMainScript.lua", true))()
