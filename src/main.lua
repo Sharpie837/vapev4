@@ -24,18 +24,22 @@ local cloneref = cloneref or function(obj)
 end
 local playersService = cloneref(game:GetService('Players'))
 
+local function is404(res)
+	return type(res) ~= 'string' or (#res < 50 and (res:sub(1, 14) == '404: Not Found' or res:sub(1, 13) == '404 Not Found'))
+end
+
 local function downloadFile(path, func)
 	if not isfile(path) then
 		local rel = select(1, path:gsub('newvape/', ''))
 		local suc, res = pcall(function()
 			return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel, true)
 		end)
-		if (not suc or type(res) ~= 'string' or res:find('404: Not Found') or res:find('404 Not Found')) and rel:find('assets/new/') then
+		if (not suc or is404(res)) and rel:find('assets/new/') then
 			suc, res = pcall(function()
 				return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel:gsub('assets/new/', 'guis/new/assets/'), true)
 			end)
 		end
-		if not suc or type(res) ~= 'string' or res:find('404: Not Found') or res:find('404 Not Found') then
+		if not suc or is404(res) then
 			error(res or '404: Not Found')
 		end
 		if path:find('.lua') then
@@ -106,7 +110,7 @@ if not shared.VapeIndependent then
 		local gamePath = 'newvape/games/'..game.PlaceId..'.lua'
 		if isfile(gamePath) then
 			local content = readfile(gamePath)
-			if content:find('404: Not Found') or content:find('404 Not Found') then
+			if is404(content) then
 				delfile(gamePath)
 			else
 				local gameFunc = loadstring(content, tostring(game.PlaceId))
@@ -117,7 +121,7 @@ if not shared.VapeIndependent then
 		else
 			if not shared.VapeDeveloper then
 				local success, data = pcall(downloadFile, gamePath)
-				if success and type(data) == 'string' and not (data:find('404: Not Found') or data:find('404 Not Found')) then
+				if success and not is404(data) then
 					local gameFunc = loadstring(data, tostring(game.PlaceId))
 					if type(gameFunc) == 'function' then
 						gameFunc(...)
@@ -133,7 +137,7 @@ if not shared.VapeIndependent then
 		local cacheFile = 'newvape/games/'..place..'.lua'
 		if isfile(cacheFile) then
 			local suc, content = pcall(readfile, cacheFile)
-			if (not suc) or (not content:find('entitylibrary')) or content:find('404: Not Found') then
+			if (not suc) or (not content:find('entitylibrary')) or is404(content) then
 				delfile(cacheFile)
 			end
 		end
@@ -144,7 +148,7 @@ if not shared.VapeIndependent then
 			end
 		else
 			local success, data = pcall(downloadFile, cacheFile)
-			if success and type(data) == 'string' and not (data:find('404: Not Found') or data:find('404 Not Found')) then
+			if success and not is404(data) then
 				local func = loadstring(data, place)
 				if type(func) == 'function' then
 					func(...)

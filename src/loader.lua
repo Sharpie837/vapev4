@@ -8,18 +8,22 @@ local delfile = delfile or function(file)
 	writefile(file, '')
 end
 
+local function is404(res)
+	return type(res) ~= 'string' or (#res < 50 and (res:sub(1, 14) == '404: Not Found' or res:sub(1, 13) == '404 Not Found'))
+end
+
 local function downloadFile(path, func)
 	if not isfile(path) then
 		local rel = select(1, path:gsub('newvape/', ''))
 		local suc, res = pcall(function()
 			return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel, true)
 		end)
-		if (not suc or type(res) ~= 'string' or res:find('404: Not Found') or res:find('404 Not Found')) and rel:find('assets/new/') then
+		if (not suc or is404(res)) and rel:find('assets/new/') then
 			suc, res = pcall(function()
 				return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel:gsub('assets/new/', 'guis/new/assets/'), true)
 			end)
 		end
-		if not suc or type(res) ~= 'string' or res:find('404: Not Found') or res:find('404 Not Found') then
+		if not suc or is404(res) then
 			error(res or '404: Not Found')
 		end
 		if path:find('.lua') then

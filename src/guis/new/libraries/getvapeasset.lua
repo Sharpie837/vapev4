@@ -82,6 +82,10 @@ do
 		end
 	end
 
+	local function is404(res)
+		return type(res) ~= 'string' or (#res < 50 and (res:sub(1, 14) == '404: Not Found' or res:sub(1, 13) == '404 Not Found'))
+	end
+
 	local function downloadFile(path, callback)
 		if not isfile(path) then
 			createDownloader(path)
@@ -91,14 +95,14 @@ do
 				return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel, true)
 			end)
 
-			if (not success or data == '404: Not Found') and rel:find('assets/new/') then
+			if (not success or is404(data)) and rel:find('assets/new/') then
 				success, data = pcall(function()
 					return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel:gsub('assets/new/', 'guis/new/assets/'), true)
 				end)
 			end
 
-			if not success or data == '404: Not Found' then
-				error(data)
+			if not success or is404(data) then
+				error(data or '404: Not Found')
 			end
 
 			if path:find('.lua') then
