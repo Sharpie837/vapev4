@@ -1,9 +1,17 @@
 repeat task.wait() until game:IsLoaded()
 if shared.vape then shared.vape:Uninject() end
 
+local function stripBOM(str)
+	if type(str) == 'string' and str:sub(1, 3) == '\239\187\191' then
+		return str:sub(4)
+	end
+	return str
+end
+
 local vape
-local loadstring = function(...)
-	local res, err = loadstring(...)
+local loadstring = function(source, chunk)
+	local cleanSource = stripBOM(source)
+	local res, err = loadstring(cleanSource, chunk)
 	if err and vape then
 		vape:CreateNotification('Vape', 'Failed to load : '..err, 30, 'alert')
 	end
@@ -43,6 +51,7 @@ local function downloadFile(path, func)
 			error(res or '404: Not Found')
 		end
 		if path:find('.lua') then
+			res = stripBOM(res)
 			res = '--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.\n'..res
 		end
 		writefile(path, res)

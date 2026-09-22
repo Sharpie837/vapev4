@@ -12,6 +12,13 @@ local function is404(res)
 	return type(res) ~= 'string' or (#res < 50 and (res:sub(1, 14) == '404: Not Found' or res:sub(1, 13) == '404 Not Found'))
 end
 
+local function stripBOM(str)
+	if type(str) == 'string' and str:sub(1, 3) == '\239\187\191' then
+		return str:sub(4)
+	end
+	return str
+end
+
 local function downloadFile(path, func)
 	if not isfile(path) then
 		local rel = select(1, path:gsub('newvape/', ''))
@@ -27,6 +34,7 @@ local function downloadFile(path, func)
 			error(res or '404: Not Found')
 		end
 		if path:find('.lua') then
+			res = stripBOM(res)
 			res = '--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.\n'..res
 		end
 		writefile(path, res)
