@@ -4,7 +4,7 @@ local HandCheck
 local CooldownBar
 local toggles = {}
 local cdholder, cdframe, cdlabel
-local arrestCooldown = 0
+arrestCooldown = 0
 
 AutoArrest = vape.Categories.Blatant:CreateModule({
 	Name = 'AutoArrest',
