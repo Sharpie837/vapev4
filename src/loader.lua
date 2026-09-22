@@ -14,13 +14,13 @@ local function downloadFile(path, func)
 		local suc, res = pcall(function()
 			return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel, true)
 		end)
-		if (not suc or res == '404: Not Found') and rel:find('assets/new/') then
+		if (not suc or type(res) ~= 'string' or res:find('404: Not Found') or res:find('404 Not Found')) and rel:find('assets/new/') then
 			suc, res = pcall(function()
 				return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel:gsub('assets/new/', 'guis/new/assets/'), true)
 			end)
 		end
-		if not suc or res == '404: Not Found' then
-			error(res)
+		if not suc or type(res) ~= 'string' or res:find('404: Not Found') or res:find('404 Not Found') then
+			error(res or '404: Not Found')
 		end
 		if path:find('.lua') then
 			res = '--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.\n'..res

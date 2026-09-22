@@ -7,7 +7,7 @@ local loadstring = function(...)
 	if err and vape then
 		vape:CreateNotification('Vape', 'Failed to load : '..err, 30, 'alert')
 	end
-	return res
+	return res or function() end
 end
 local queue_on_teleport = queue_on_teleport or function() end
 local isfile = isfile or function(file)
@@ -30,13 +30,13 @@ local function downloadFile(path, func)
 		local suc, res = pcall(function()
 			return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel, true)
 		end)
-		if (not suc or res == '404: Not Found') and rel:find('assets/new/') then
+		if (not suc or type(res) ~= 'string' or res:find('404: Not Found') or res:find('404 Not Found')) and rel:find('assets/new/') then
 			suc, res = pcall(function()
 				return game:HttpGet('https://raw.githubusercontent.com/Sharpie837/vapev4/main/src/'..rel:gsub('assets/new/', 'guis/new/assets/'), true)
 			end)
 		end
-		if not suc or res == '404: Not Found' then
-			error(res)
+		if not suc or type(res) ~= 'string' or res:find('404: Not Found') or res:find('404 Not Found') then
+			error(res or '404: Not Found')
 		end
 		if path:find('.lua') then
 			res = '--This watermark is used to delete the file if its cached, remove it to make the file persist after vape updates.\n'..res
@@ -101,14 +101,27 @@ shared.vape = vape
 if not shared.VapeIndependent then
 	local isJailbreak = game.PlaceId == 606849621 or game.PlaceId == 17190407811 or game.GameId == 245662005
 	if not isJailbreak then
-		loadstring(downloadFile('newvape/games/universal.lua'), 'universal')()
-		if isfile('newvape/games/'..game.PlaceId..'.lua') then
-			loadstring(readfile('newvape/games/'..game.PlaceId..'.lua'), tostring(game.PlaceId))(...)
+		local universal = loadstring(downloadFile('newvape/games/universal.lua'), 'universal')
+		if type(universal) == 'function' then universal() end
+		local gamePath = 'newvape/games/'..game.PlaceId..'.lua'
+		if isfile(gamePath) then
+			local content = readfile(gamePath)
+			if content:find('404: Not Found') or content:find('404 Not Found') then
+				delfile(gamePath)
+			else
+				local gameFunc = loadstring(content, tostring(game.PlaceId))
+				if type(gameFunc) == 'function' then
+					gameFunc(...)
+				end
+			end
 		else
 			if not shared.VapeDeveloper then
-				local success, data = pcall(downloadFile, 'newvape/games/'..game.PlaceId..'.lua')
-				if success then
-					loadstring(data, tostring(game.PlaceId))(...)
+				local success, data = pcall(downloadFile, gamePath)
+				if success and type(data) == 'string' and not (data:find('404: Not Found') or data:find('404 Not Found')) then
+					local gameFunc = loadstring(data, tostring(game.PlaceId))
+					if type(gameFunc) == 'function' then
+						gameFunc(...)
+					end
 				end
 			end
 		end
@@ -120,16 +133,22 @@ if not shared.VapeIndependent then
 		local cacheFile = 'newvape/games/'..place..'.lua'
 		if isfile(cacheFile) then
 			local suc, content = pcall(readfile, cacheFile)
-			if (not suc) or (not content:find('entitylibrary')) then
+			if (not suc) or (not content:find('entitylibrary')) or content:find('404: Not Found') then
 				delfile(cacheFile)
 			end
 		end
 		if isfile(cacheFile) and readfile(cacheFile) ~= '' then
-			loadstring(readfile(cacheFile), place)(...)
+			local func = loadstring(readfile(cacheFile), place)
+			if type(func) == 'function' then
+				func(...)
+			end
 		else
 			local success, data = pcall(downloadFile, cacheFile)
-			if success then
-				loadstring(data, place)(...)
+			if success and type(data) == 'string' and not (data:find('404: Not Found') or data:find('404 Not Found')) then
+				local func = loadstring(data, place)
+				if type(func) == 'function' then
+					func(...)
+				end
 			end
 		end
 	end
